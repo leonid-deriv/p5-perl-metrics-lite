@@ -1,4 +1,4 @@
-requires 'perl', '5.008001';
+requires 'perl', '5.36';
 
 requires 'Carp';
 requires 'File::Basename';

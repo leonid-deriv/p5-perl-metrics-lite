@@ -5,6 +5,7 @@
 /blib
 /Makefile
 /pm_to_blib
+/.vscode/
 
 /carton.lock
 /.carton/
