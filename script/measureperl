@@ -1,20 +1,24 @@
-#!/usr/bin/perl
+#!/opt/homebrew/opt/perl/bin/perl
 use strict;
 use warnings;
+use lib 'blib/lib';
 use Getopt::Long ();
-use Perl::Metrics::Lite;
+use Perl::Metrics::Lite;  
 use Pod::Usage;
 use Perl::Metrics::Lite::Report::Text;
 
 our $VERSION = "0.092";
 
 my $show_only_error = 0;
+my $only_json = 0;
+
 Getopt::Long::GetOptions(
     'h|help'                        => \my $help,
     'verbose'                       => \my $verbose,
     'l|max_sub_lines=i'             => \my $max_sub_lines,
     'c|max_sub_mccabe_complexity=i' => \my $max_sub_mccabe_complexity,
     'e|show_only_error'             => \$show_only_error,
+    'j|only_json'                   => \$only_json
 ) or pod2usage();
 
 pod2usage() if $help;
@@ -31,7 +35,8 @@ sub report {
     my $reporter = Perl::Metrics::Lite::Report::Text->new(
         max_sub_lines             => $max_sub_lines             || 60,
         max_sub_mccabe_complexity => $max_sub_mccabe_complexity || 10,
-        show_only_error           => $show_only_error
+        show_only_error           => $show_only_error,
+        only_json                 => $only_json || 0,
     );
     my $analzyer = Perl::Metrics::Lite->new( report_module => $reporter );
     my $analysis = $analzyer->analyze_files(@$files);

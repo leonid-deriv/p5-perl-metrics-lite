@@ -2,6 +2,7 @@ package Perl::Metrics::Lite::Report::Text;
 use strict;
 use warnings;
 use Text::ASCIITable;
+use JSON::XS;
 
 my $DEFAULT_MAX_SUB_LINES         = 60;
 my $DEFAULT_MAX_MCCABE_COMPLEXITY = 10;
@@ -26,6 +27,9 @@ sub new {
     $self->{max_sub_lines}             = $max_sub_lines;
     $self->{max_sub_mccabe_complexity} = $max_sub_mccabe_complexity;
     $self->{show_only_error}           = $show_only_error;
+    $self->{only_json}                 = $args{only_json};
+
+    $self->{sarif} = {};
 
     return $self;
 }
@@ -38,11 +42,12 @@ sub report {
 
     my $sub_stats = $analysis->sub_stats;
     $self->report_sub_stats($sub_stats);
+    $self->_print_sarif_file();
 }
 
 sub report_file_stats {
     my ( $self, $file_stats ) = @_;
-    _print_file_stats_report_header();
+    $self->_print_file_stats_report_header();
 
     my @rows = ();
     foreach my $file_stat ( @{$file_stats} ) {
@@ -57,14 +62,19 @@ sub report_file_stats {
     if (@rows) {
         my $keys = [ "path", "loc", "subs", "packages" ];
         my $table = $self->_create_table( $keys, \@rows );
-        print $table;
+        if ( !($self->{only_json}) ) {
+            print $table;
+        }
     }
 }
 
 sub _print_file_stats_report_header {
-    print "#======================================#\n";
-    print "#           File Metrics               #\n";
-    print "#======================================#\n";
+    my ( $self ) = @_;
+    if ( !($self->{only_json}) ) {
+        print "#======================================#\n";
+        print "#           File Metrics               #\n";
+        print "#======================================#\n";
+    }
 }
 
 sub report_sub_stats {
@@ -77,9 +87,13 @@ sub report_sub_stats {
 }
 
 sub _print_sub_stats_report_header {
-    print "#======================================#\n";
-    print "#         Subroutine Metrics           #\n";
-    print "#======================================#\n";
+     my ($self) = @_;
+     if ( !($self->{only_json}) ) {
+        print "#======================================#\n";
+        print "#         Subroutine Metrics           #\n";
+        print "#======================================#\n";
+     }
+    $self->_create_sarif_placeholder();
 }
 
 sub _report_sub_metrics {
@@ -93,8 +107,10 @@ sub _report_sub_metrics {
 sub _print_table {
     my ( $self, $path, $table ) = @_;
 
-    print "\nPath: ${path}\n";
-    print $table;
+    if ( !($self->{only_json}) ) {
+        print "\nPath: ${path}\n";
+        print $table;
+    }
 }
 
 sub _create_ascii_table_for_submetrics {
@@ -105,11 +121,12 @@ sub _create_ascii_table_for_submetrics {
             if $self->{show_only_error}
                 && $self->is_sub_metric_ok($sub_metric);
         push @rows, $self->_create_row($sub_metric);
+        $self->_create_sarif_details($sub_metric);
     }
 
     my $table;
     if (@rows) {
-        my $keys = [ "method", "loc", "mccabe_complexity" ];
+        my $keys = [ "method", "loc", "line_number", "mccabe_complexity" ];
         $table = $self->_create_table( $keys, \@rows );
     }
     return $table;
@@ -129,6 +146,7 @@ sub _create_row {
     return {
         method            => $sub_metric->{name},
         loc               => $sub_metric->{lines},
+        line_number       => $sub_metric->{line_number},
         mccabe_complexity => $sub_metric->{mccabe_complexity}
     };
 }
@@ -139,6 +157,66 @@ sub _create_table {
     $t->setCols(@$keys);
     $t->addRow( @$_{@$keys} ) for @$rows;
     $t;
+}
+
+sub _print_sarif_file {
+    my ($self) = @_;
+
+    my $json_sarif = JSON::XS->new->encode($self->{sarif});
+    print $json_sarif;
+}
+
+sub _create_sarif_details {
+    my ($self, $sub_metrics) = @_;
+    push @{$self->{sarif}->{runs}->[0]->{results}}, {
+            level => 'error',
+            ruleIndex => 0,
+            message => {
+                text =>  'cyclomatic complexity \'{0}\' for method \'{1}\' is too high',
+                arguments => [("$sub_metrics->{mccabe_complexity}"), ("$sub_metrics->{name}")]
+            },
+            ruleId => 'cyclomatic-complexity',
+            locations => 
+            [
+                {
+                    physicalLocation => {
+                        artifactLocation => {
+                            uri => "file://" . $sub_metrics->{path}
+                        },
+                    region => {
+                        startLine => $sub_metrics->{line_number}
+                     }
+                    }
+                }
+            ]
+        }
+};
+
+sub _create_sarif_placeholder {
+    my ( $self) = @_;
+   
+    $self->{sarif} = 
+        {
+        version => '2.1.0',
+        '$schema' => 'http://json.schemastore.org/sarif-2.1.0-rtm.5',
+        runs => [
+            {
+            tool => {
+                driver => {
+                name => 'cyclocamtic-complexity',
+                version => '0.1',
+                rules => [{
+                    id => 'cyclomatic-complexity',
+                        defaultConfiguration => {
+                            level => 'error'
+                        }
+                    }]
+                }
+            },
+            results => []                
+            }
+        ]
+        };
 }
 
 1;
